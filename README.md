@@ -83,3 +83,40 @@ extensive testing done yet, so use at your own risk!
 
 This wouldn't have been possible without the excellent writeup on the process
 of working with Motion Photos [here](https://medium.com/android-news/working-with-motion-photos-da0aa49b50c).
+
+Batch Migration
+---------------
+
+In addition to converting a single pair, this repo now includes an interactive migration tool that scans a folder, reports what can be paired, and then migrates everything into an output directory.
+
+Quick start (macOS):
+- Install exiftool: `brew install exiftool`
+- (Optional) For best HEIC/PNG → JPEG conversion, ensure either `sips` (macOS), Pillow, or `ffmpeg` is available.
+
+Dry run only:
+```
+python3 motion_photo_migrator.py --input /path/to/input --output /path/to/output --dry-run --verbose
+```
+
+Interactive run:
+```
+python3 motion_photo_migrator.py --input /path/to/input --output /path/to/output
+```
+Flow:
+- Step 1: Prints a summary of files found by extension, how many basenames can be paired (image+video), how many images/videos are unpaired, and how many other files exist.
+- Option 1: Proceed with migration (create Motion Photos for pairs, copy all unpaired/other files).
+- Option 2: List detailed file paths for each category, then re-prompt.
+- Option 3: Exit.
+
+Pairing rules:
+- Pair by basename (e.g., `IMG_0001.HEIC` + `IMG_0001.MOV`).
+- Images supported: `.jpg`, `.jpeg`, `.heic`, `.png`.
+- Videos supported: `.mov`, `.mp4`.
+- If multiple candidates exist per basename, priority is `jpeg > heic > png` for images, and `mov > mp4` for videos. The chosen pair is reported; alternates are listed as ambiguous.
+
+Output behavior:
+- Motion Photo result uses the basename with `.jpg` (e.g., `IMG_0001.jpg`).
+- Unpaired files are copied as-is into the output directory.
+
+Notes:
+- The migrator uses `MotionPhotoMuxer.convert()` internally. If `pyexiv2` is not available, it falls back to `exiftool` to write XMP metadata (install with `brew install exiftool`).

@@ -5,7 +5,16 @@ import sys
 from pathlib import Path
 import glob
 
-import pyexiv2
+import subprocess
+
+try:
+    import pyexiv2  # provided by the py3exiv2 package
+    HAVE_PYEXIV2 = True
+except Exception as e:
+    pyexiv2 = None
+    HAVE_PYEXIV2 = False
+    # Logging is configured later; keep message concise here
+    sys.stderr.write(f"[warn] pyexiv2 unavailable, will try exiftool fallback: {e}\n")
 
 def validate_directory(dir: Path):
     
@@ -55,7 +64,7 @@ def merge_files(photo_path: Path, video_path: Path, output_path: Path) -> Path:
     return out_path
 
 
-def add_xmp_metadata(merged_file: Path, offset: int):
+def _add_xmp_metadata_pyexiv2(merged_file: Path, offset: int):
     """Adds XMP metadata to the merged image indicating the byte offset in the file where the video begins.
     :param merged_file: The path to the file that has the photo and video merged together.
     :param offset: The number of bytes from EOF to the beginning of the video.
@@ -81,6 +90,49 @@ def add_xmp_metadata(merged_file: Path, offset: int):
         'Xmp.GCamera.MicroVideoPresentationTimestampUs',
         1500000)  # in Apple Live Photos, the chosen photo is 1.5s after the start of the video, so 1500000 microseconds
     metadata.write()
+
+
+def _which(cmd: str) -> bool:
+    try:
+        subprocess.run([cmd, "-ver"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        return True
+    except Exception:
+        return False
+
+
+def _add_xmp_metadata_exiftool(merged_file: Path, offset: int):
+    """Write required GCamera XMP tags using exiftool.
+    Requires exiftool to be installed and on PATH.
+    """
+    if not _which("exiftool"):
+        logging.error("exiftool not found on PATH, cannot write XMP metadata.")
+        exit(1)
+
+    cmd = [
+        "exiftool",
+        "-overwrite_original",
+        "-XMP-GCamera:MicroVideo=1",
+        "-XMP-GCamera:MicroVideoVersion=1",
+        f"-XMP-GCamera:MicroVideoOffset={offset}",
+        "-XMP-GCamera:MicroVideoPresentationTimestampUs=1500000",
+        str(merged_file),
+    ]
+
+    logging.info("Writing XMP via exiftool: " + " ".join(cmd[:-1]) + " <file>")
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        logging.error("exiftool failed: %s", res.stderr.strip())
+        exit(1)
+    logging.info("XMP metadata written by exiftool.")
+
+
+def add_xmp_metadata(merged_file: Path, offset: int):
+    """Adds XMP metadata either via pyexiv2 or exiftool fallback."""
+    if HAVE_PYEXIV2:
+        _add_xmp_metadata_pyexiv2(merged_file, offset)
+    else:
+        logging.warning("pyexiv2 not available; using exiftool fallback.")
+        _add_xmp_metadata_exiftool(merged_file, offset)
 
 
 def convert(photo_path: Path, video_path: Path, output_path: Path):
